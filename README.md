@@ -67,10 +67,45 @@ Other design facts carried forward in code: cells come from two laboratories
 labelled `r1, r2, r3, r5, r8` — `r4`, `r6` and `r7` are absent from the object.
 Batch is regressed out during normalisation.
 
-> The `Sorting` values `WR` and `Cd73ft`, and the hyperoxia schedule of the OIR
-> protocol, are named in the code but their definitions are not recorded
-> anywhere in it. One sentence defining each belongs here; it is the only part
-> of this README that could not be established from the files.
+### What the two fractions are
+
+**`WR`** is whole retina — the full dissociated retina, unsorted.
+
+**`Cd73ft`** is the CD73 flow-through: the CD73-negative fraction collected
+after sorting on CD73 (Nt5e). CD73 marks photoreceptor precursors, so the
+flow-through is depleted of photoreceptors and correspondingly enriched for the
+rarer populations — vascular endothelium, pericytes, glia and immune cells.
+
+This is why the two fractions must be integrated rather than pooled, and why
+integration is anchored on `Sorting`: the fractions differ in composition **by
+design**, so their difference is a sampling artefact to reconcile, not biology
+to preserve. It also explains why the rare cell types in this dataset are
+recoverable at all — 453 pericytes, 350 endothelial cells, 507 immune cells and
+223 astrocytes out of 51,151 would be far scarcer without the enrichment.
+
+Read the cell counts with this in mind: a cell-type proportion computed over all
+cells is a proportion over a deliberately non-representative mixture, not over
+the retina. Proportions in the composition figures are therefore comparable
+*between conditions at matched timepoints*, where the fraction mix is similar,
+and are not estimates of true retinal abundance.
+
+### The OIR protocol
+
+Pups and their nursing dam are exposed to **75% O₂ from P7 to P12**, then
+returned to room air; neovascularisation peaks around **P17**. Normoxic
+littermates remain in room air throughout.
+
+This is what makes the design table above the shape it is. There is no OIR
+before P12 because there is no retinopathy before P12 — the hyperoxic phase is
+vessel loss, and the proliferative phase only begins after the return to room
+air. The normoxia-only timepoints P5, P7 and P10 therefore describe normal
+retinal development, and they are in the dataset as the developmental baseline
+against which the P12–P17 OIR response is read, not as the missing half of a
+paired comparison.
+
+- Smith LE et al. *Invest Ophthalmol Vis Sci* 1994;35:101–111. PMID 7507904
+- Connor KM et al. *Nat Protoc* 2009;4:1565–1573.
+  doi:[10.1038/nprot.2009.187](https://doi.org/10.1038/nprot.2009.187)
 
 ---
 
@@ -123,7 +158,8 @@ is described here rather than run from here.
 
 **Library preparation and sequencing.** Drop-seq on dissociated mouse retina,
 following the published protocol; cells were taken as whole retina (`WR`) and as
-a CD73-based sorted fraction (`Cd73ft`) at each timepoint. Sample identity is
+the CD73 flow-through (`Cd73ft`, the CD73-negative fraction, depleted of
+photoreceptor precursors) at each timepoint — see the design section above. Sample identity is
 encoded in the cell barcode column names of the merged matrix as
 `Condition_TimePoint_Sorting_Labo_Replicate_CellBarCode`, which is what every
 downstream script parses to build its metadata.
@@ -193,6 +229,13 @@ documented in full in the `METHODS_CHOICES.md` of the folder it affects.
    reproduced to the version.
 8. **Cell cycle is deliberately regressed out** of the P5–P17 integration, so
    that object cannot be used to study proliferation across development.
+9. **The cell mixture is not representative of the retina by design.** Half the
+   cells come from a CD73-depleted fraction, so a proportion computed over all
+   cells is a proportion over an enriched mixture. Composition figures are
+   comparable between conditions at matched timepoints; they are not estimates
+   of true retinal abundance. The fraction mix also differs by timepoint — P7
+   and P10 are `WR` only — so proportions are not comparable along the time
+   axis either.
 
 ---
 
