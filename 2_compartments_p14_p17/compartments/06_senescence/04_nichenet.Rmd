@@ -1,0 +1,401 @@
+<!--
+---------------------------------------------------------------------------
+06_senescence - 04_nichenet.Rmd
+
+Part of 2_compartments_p14_p17. Subclustering and downstream analysis of
+the senescence-merged compartment, run on cells taken from the annotated
+object of that folder's step 03.
+
+WHICH OBJECT
+    Cells are subset from
+    RETINA_RYTVELA_OIRTimeCourse_AlignedByCond_Sorting.3.17.30.Seurat_object.annotated.rds
+    - P14/P17 only, Seurat v2 lineage. NOT the P5-P17 object of the sibling
+    folder.
+
+WHY SUBCLUSTER PER COMPARTMENT
+    A single clustering resolution cannot resolve microglial activation states
+    and rod subtypes at once: the resolution that splits the former shatters
+    the latter. Each compartment is therefore re-embedded and re-clustered on
+    its own cells, and ../11_subcluster_convergence.R is where the independent
+    label sets are reconciled onto one object.
+
+RUN ORDER
+    After ../03_annotate_celltypes.R, before ../11_subcluster_convergence.R.
+    Within this folder, in numbered order.
+
+RELIC CODE
+    Blocks commented out with `~` were carried in from other projects and are
+    disabled, not deleted - they operate on objects this script never loads,
+    or write into directories that no longer exist. See ../../EDIT_POLICY.md.
+---------------------------------------------------------------------------
+-->
+
+---
+title: "run_nichenet_all_celltypes.Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(nichenetr)
+library(tidyverse)
+library(loomR)
+library(Seurat)
+library(data.table)
+library(ggrepel)
+library(RColorBrewer)
+library(viridis)
+library(cowplot)
+library(ggbeeswarm)
+library(ggridges)
+library(cowplot)
+library(plotly)
+library(viridis)
+library(psupertime)
+
+theme_set(theme_cowplot())
+```
+
+# Purpose
+
+This Rmarkdown will use a Seurat object, iterating over each cell type and running a Nichenet analysis for each cell type with all other cell types in the seurat object as potential "sender" cells. 
+
+# Replacement functions for Nichenet 
+
+```{r}
+## For getting expressed genes, I would like to use the $SCT@data slot instead of $RNA@data
+get_expressed_genes_sct = function(ident, seurat_obj, pct = 0.10){
+
+  library(Seurat)
+  library(dplyr)
+
+  # input check
+  # give warning when seurat_obj is result from integration
+  # check: seurat_obj should have a data/RNA
+  if(!is.numeric(seurat_obj@assays$RNA@data %>% as.matrix())){
+    stop("Seurat object should contain normalized expression data (numeric matrix). Check 'seurat_obj@assays$RNA@data' for default or 'seurat_obj@assays$integrated@data' for integrated data" )
+  }
+
+  if("integrated" %in% names(seurat_obj@assays)){
+    if(sum(dim(seurat_obj@assays$RNA@data)) == 0 & sum(dim(seurat_obj@assays$integrated@data)) == 0)
+      stop("Seurat object should contain normalized expression data (numeric matrix). Check 'seurat_obj@assays$RNA@data' for default or 'seurat_obj@assays$integrated@data' for integrated data" )
+  } else if ("SCT" %in% names(seurat_obj@assays)) {
+    if(sum(dim(seurat_obj@assays$RNA@data)) == 0 & sum(dim(seurat_obj@assays$SCT@data)) == 0){
+      stop("Seurat object should contain normalized expression data (numeric matrix). Check 'seurat_obj@assays$RNA@data' for default or 'seurat_obj@assays$SCT@data' for data corrected via SCT")
+    }} else {
+    if(sum(dim(seurat_obj@assays$RNA@data)) == 0){
+      stop("Seurat object should contain normalized expression data (numeric matrix). Check 'seurat_obj@assays$RNA@data'")
+    }
+  }
+
+  # check: provided identities should be present
+  if(sum(ident %in% unique(Idents(seurat_obj))) != length(ident))
+    stop("One or more provided cell clusters is not part of the 'Idents' of your Seurat object")
+
+  cells_oi = Idents(seurat_obj) %>% .[Idents(seurat_obj) %in% ident] %>% names()
+
+
+  if("integrated" %in% names(seurat_obj@assays)){
+    warning("Seurat object is result from the Seurat integration workflow. Make sure that this way of defining expressed genes is appropriate for your integrated data.")
+    cells_oi_in_matrix = intersect(colnames(seurat_obj@assays$integrated@data), cells_oi)
+    if(length(cells_oi_in_matrix) != length(cells_oi))
+      stop("Not all cells of interest are in your expression matrix (seurat_obj@assays$integrated@data). Please check that the expression matrix contains cells in columns and genes in rows.")
+    genes = seurat_obj@assays$integrated@data %>% .[,cells_oi] %>% apply(1,function(x){sum(x>0)/length(x)}) %>% .[. >= pct] %>% names()
+  } else if ("SCT" %in% names(seurat_obj@assays)) {
+    warning("Seurat object is result from the Seurat single-cell transform workflow. Make sure that this way of defining expressed genes is appropriate for SCT data.")
+    cells_oi_in_matrix = intersect(colnames(seurat_obj@assays$SCT@data), cells_oi)
+    if(length(cells_oi_in_matrix) != length(cells_oi))
+      stop("Not all cells of interest are in your expression matrix (seurat_obj@assays$SCT@data). Please check that the expression matrix contains cells in columns and genes in rows.")
+    genes = seurat_obj@assays$SCT@data %>% .[,cells_oi] %>% apply(1,function(x){sum(x>0)/length(x)}) %>% .[. >= pct] %>% names()
+  } else {
+    if(sum(cells_oi %in% colnames(seurat_obj@assays$RNA@data)) == 0)
+      stop("None of the cells are in colnames of 'seurat_obj@assays$RNA@data'. The expression matrix should contain cells in columns and genes in rows.")
+    cells_oi_in_matrix = intersect(colnames(seurat_obj@assays$RNA@data), cells_oi)
+    if(length(cells_oi_in_matrix) != length(cells_oi))
+      stop("Not all cells of interest are in your expression matrix (seurat_obj@assays$RNA@data). Please check that the expression matrix contains cells in columns and genes in rows.")
+    genes = seurat_obj@assays$SCT@data %>% .[,cells_oi] %>% apply(1,function(x){sum(x>0)/length(x)}) %>% .[. >= pct] %>% names()
+  }
+  return(genes)
+}
+```
+
+
+# Load data
+
+## Load Seurat object
+
+First, we will load our Seurat object of interest.
+
+```{r}
+seurat_object <- readRDS("../final_analysis_objects/sct_clustering.seuratV3.all_timepoints.75_pcs.LABELED.with_psupertime.rds")
+```
+
+
+## Load reference models
+
+```{r}
+#~ ---------------------------------------------------------------------------
+#~ RELIC - commented out when this repository was assembled.
+#~ This setwd() points into another project's output tree, which no longer
+#~ exists on the cluster. setwd() to a missing directory aborts an R script,
+#~ so the line is disabled rather than deleted; the working directory stays at
+#~ this step's own output directory. See ../EDIT_POLICY.md.
+#~ ---------------------------------------------------------------------------
+#~ ligand_target_matrix <- readRDS("/home/wueflo00/projects/def-andelfin/wueflo00/Heart_maturation/Manuscript_analysis/references/nichenetr/nichenetr.ligand_target_matrix.human.rds")
+ligand_target_matrix = ligand_target_matrix %>% .[!is.na(rownames(ligand_target_matrix)), !is.na(colnames(ligand_target_matrix))]
+
+#~ ---------------------------------------------------------------------------
+#~ RELIC - commented out when this repository was assembled.
+#~ This setwd() points into another project's output tree, which no longer
+#~ exists on the cluster. setwd() to a missing directory aborts an R script,
+#~ so the line is disabled rather than deleted; the working directory stays at
+#~ this step's own output directory. See ../EDIT_POLICY.md.
+#~ ---------------------------------------------------------------------------
+#~ lr_network <- readRDS("/home/wueflo00/projects/def-andelfin/wueflo00/Heart_maturation/Manuscript_analysis/references/nichenetr/nichenetr.lr_network.mouse.rds")
+
+#~ ---------------------------------------------------------------------------
+#~ RELIC - commented out when this repository was assembled.
+#~ This setwd() points into another project's output tree, which no longer
+#~ exists on the cluster. setwd() to a missing directory aborts an R script,
+#~ so the line is disabled rather than deleted; the working directory stays at
+#~ this step's own output directory. See ../EDIT_POLICY.md.
+#~ ---------------------------------------------------------------------------
+#~ weighted_networks <- readRDS("/home/wueflo00/projects/def-andelfin/wueflo00/Heart_maturation/Manuscript_analysis/references/nichenetr/nichenetr.weighted_network.mouse.rds")
+weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
+```
+
+```{r}
+lr_network = lr_network %>% mutate(from = convert_human_to_mouse_symbols(from), to = convert_human_to_mouse_symbols(to)) %>% drop_na()
+colnames(ligand_target_matrix) = ligand_target_matrix %>% colnames() %>% convert_human_to_mouse_symbols()
+rownames(ligand_target_matrix) = ligand_target_matrix %>% rownames() %>% convert_human_to_mouse_symbols()
+
+weighted_networks_lr = weighted_networks_lr %>% mutate(from = convert_human_to_mouse_symbols(from), to = convert_human_to_mouse_symbols(to)) %>% drop_na()
+
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+```
+
+## Load psupertime results for differentiall expressed genes
+
+In this specific analysis, we are interested in ligands that contribute to cell type maturation. We have precomputed genes that change over differentiation time using psupertime. We will load these results here.
+
+```{r}
+## Load table of significant genes from psupertime
+psupertime_results <- fread("../final_analysis_objects/psupertime/all_imp_genes.psupertime.rsv")
+psupertime_results <- psupertime_results %>%
+  mutate("direction" = if_else(beta > 0,"increase","decrease"))
+
+## Get all the cell types that we have calculated DE genes for
+cell_types_de <- unique(psupertime_results$cell_type)
+```
+
+```{r}
+## Get an overview of how many genes are increased or decreased with a non-zero beta in psupertime
+psupertime_results_stats <- psupertime_results %>%
+  group_by(cell_type,direction) %>%
+  tally()
+
+ggplot(psupertime_results_stats,aes(cell_type,n,fill= direction)) +
+  geom_bar(stat= "identity",position = "dodge") +
+  coord_flip()
+
+ggplot(psupertime_results,aes(beta,fill = cell_type)) +
+  geom_density(alpha = 0.2)
+```
+
+
+# Perform Nichenet analysis
+
+We will now iterate over each cell type for which we have calculate DE genes and try to identify ligands from other cell types that can explain the differential expression of these genes. The idea is whether we can identify cell types or specific ligands that cause maturation of heart cells in the growing heart.
+
+```{r}
+ligand_activities_all <- vector(mode = "list")
+vis_ligand_target_all <- vector(mode = "list")
+vis_ligand_receptor_network_strict_all <- vector(mode = "list")
+
+## iterate over each cell type
+
+for(receiver_cell in cell_types_de){
+  print(receiver_cell)
+  
+  ## Get all cells except the cell type we are investigating, since Nichenet likely doesn't deal with acell autonomous effects
+  ## Should we limit sender cells to subtype of cells that we are interested in for each receiver cell?!
+  sender_cells <- setdiff(cell_types_de,receiver_cell)
+  
+  ## Take the top 10% of differentially expressed genes based on absolute beta from psupertime
+  de_genes_time <- subset(psupertime_results,cell_type == receiver_cell)
+  de_genes_time_top <- de_genes_time %>%
+    top_frac(0.2, wt = beta)
+  
+  de_genes_time_bottom <- de_genes_time %>%
+    top_frac(-0.2, wt = beta)
+  
+  de_genes_time <- rbind(de_genes_time_top,de_genes_time_bottom)
+  
+  de_genes_time <- de_genes_time$gene
+  
+  ## Step Step 1
+  print("Step 1:")
+  ## Start Nichenet analysis
+  expressed_genes_receiver = get_expressed_genes_sct(receiver_cell, seurat_object, pct = 0.10)
+
+  background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+  
+  ## sender
+  list_expressed_genes_sender = sender_cells %>% unique() %>% lapply(get_expressed_genes_sct,
+                                                                         seurat_object, 0.10)
+  
+  # lapply to get the expressed genes of every sender cell type separately here
+  expressed_genes_sender = list_expressed_genes_sender %>% unlist() %>% unique()
+  
+  ## Step 3
+  print("Step 3:")
+  expressed_ligands = intersect(ligands,expressed_genes_sender)
+  expressed_receptors = intersect(receptors,expressed_genes_receiver)
+
+
+  potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+  
+  ## Step 4
+  print("Step 4:")
+  ligand_activities = predict_ligand_activities(geneset = de_genes_time, background_expressed_genes = background_expressed_genes, ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+
+  ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(desc(pearson)))
+  
+  ## Here we can set how many top ligands we want to retain... Maybe 25% of top ligands?
+  best_upstream_ligands = ligand_activities %>% top_frac(0.25, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+  
+  ## plot Dotplot
+  dotplot_best_ligands <- DotPlot(seurat_object, features = best_upstream_ligands %>% rev(), cols = "RdYlBu") + RotatedAxis()
+  
+  ligand_activities_all[[receiver_cell]] <- ligand_activities
+  
+  ## Step 5
+  print("Step 5:")
+  active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = de_genes_time, ligand_target_matrix = ligand_target_matrix, n = 200) %>% bind_rows() %>% drop_na()
+
+  active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.33)
+
+  order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>%
+    make.names()
+  order_targets = active_ligand_target_links_df$target %>% unique() %>%
+    intersect(rownames(active_ligand_target_links)) %>% make.names()
+  
+  rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names() #make.names() for heatmap visualization of genes like H2-T23
+  colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names()  # make.names() for heatmap visualization of genes like H2-T23
+
+  vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+  vis_ligand_target_all[[receiver_cell]] <- vis_ligand_target
+  
+  p_ligand_target_network = vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "purple",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")  + theme(axis.text.x = element_text(face = "italic")) + scale_fill_gradient2(low = "whitesmoke",  high = "purple", breaks = c(0,0.006,0.012))
+  p_ligand_target_network
+  
+  
+  ## Receptors of top-ranked ligands
+  lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+  best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+
+  lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+  
+  lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+  lr_network_top_matrix = lr_network_top_df %>% select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+  
+  dist_receptors = dist(lr_network_top_matrix, method = "binary")
+  hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+  order_receptors = hclust_receptors$labels[hclust_receptors$order]
+      
+  dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+  hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+  order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+  
+  order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+  order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+  
+  vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+  rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+  colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+  
+  p_ligand_receptor_network = vis_ligand_receptor_network %>% t() %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential")
+  p_ligand_receptor_network
+  
+  ## Receptors of top ranked ligands after considering literature information
+  lr_network_strict = lr_network %>% filter(database != "ppi_prediction_go" & database != "ppi_prediction")
+  ligands_bona_fide = lr_network_strict %>% pull(from) %>% unique()
+  receptors_bona_fide = lr_network_strict %>% pull(to) %>% unique()
+  
+  lr_network_top_df_large_strict = lr_network_top_df_large %>% distinct(from,to) %>% inner_join(lr_network_strict, by = c("from","to")) %>% distinct(from,to)
+  lr_network_top_df_large_strict = lr_network_top_df_large_strict %>% inner_join(lr_network_top_df_large, by = c("from","to"))
+  
+  lr_network_top_df_strict = lr_network_top_df_large_strict %>% spread("from","weight",fill = 0)
+  lr_network_top_matrix_strict = lr_network_top_df_strict %>% select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df_strict$to)
+  
+  dist_receptors = dist(lr_network_top_matrix_strict, method = "binary")
+  hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+  order_receptors = hclust_receptors$labels[hclust_receptors$order]
+  
+  dist_ligands = dist(lr_network_top_matrix_strict %>% t(), method = "binary")
+  hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+  order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+  
+  order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix_strict))
+  order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix_strict))
+  
+  vis_ligand_receptor_network_strict = lr_network_top_matrix_strict[order_receptors, order_ligands_receptor]
+  rownames(vis_ligand_receptor_network_strict) = order_receptors %>% make.names()
+  colnames(vis_ligand_receptor_network_strict) = order_ligands_receptor %>% make.names()
+  
+  vis_ligand_receptor_network_strict_all[[receiver_cell]] <- vis_ligand_receptor_network_strict
+  
+  p_ligand_receptor_network_strict = vis_ligand_receptor_network_strict %>% t() %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential\n(bona fide)")
+  p_ligand_receptor_network_strict
+  
+  ## Step 6
+  print("Step 6:")
+  
+  # combined heatmap: overlay ligand activities with target genes
+  ligand_pearson_matrix = ligand_activities %>% select(pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+  
+  rownames(ligand_pearson_matrix) = rownames(ligand_pearson_matrix) %>% make.names()
+  colnames(ligand_pearson_matrix) = colnames(ligand_pearson_matrix) %>% make.names()
+  
+  vis_ligand_pearson = ligand_pearson_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("Pearson")
+  p_ligand_pearson = vis_ligand_pearson %>% make_heatmap_ggplot("Prioritized ligands","Ligand activity", color = "darkorange",legend_position = "top", x_axis_position = "top", legend_title = "Pearson correlation coefficient\ntarget gene prediction ability)") + theme(legend.text = element_text(size = 9))
+  
+  figures_without_legend = cowplot::plot_grid(p_ligand_pearson + theme(legend.position = "none", axis.ticks = element_blank()) + theme(axis.title.x = element_text()),
+      p_ligand_target_network + theme(legend.position = "none", axis.ticks = element_blank()) + ylab(""),
+      align = "hv",
+      nrow = 1,
+      rel_widths = c(ncol(vis_ligand_pearson)+10, ncol(vis_ligand_target)))
+  
+  legends = cowplot::plot_grid(
+      ggpubr::as_ggplot(ggpubr::get_legend(p_ligand_pearson)),
+      ggpubr::as_ggplot(ggpubr::get_legend(p_ligand_target_network)),
+      nrow = 1,
+      align = "h")
+  
+  combined_plot_1 = cowplot::plot_grid(figures_without_legend, legends, rel_heights = c(10,2), nrow = 2, align = "hv")
+  combined_plot_2 = cowplot::plot_grid(combined_plot_1, dotplot_best_ligands, rel_heights = c(1.5,1), nrow = 2)
+  
+  save_plot(combined_plot_2,
+#~ ---------------------------------------------------------------------------
+#~ RELIC - commented out when this repository was assembled.
+#~ This setwd() points into another project's output tree, which no longer
+#~ exists on the cluster. setwd() to a missing directory aborts an R script,
+#~ so the line is disabled rather than deleted; the working directory stays at
+#~ this step's own output directory. See ../EDIT_POLICY.md.
+#~ ---------------------------------------------------------------------------
+#~             filename = paste("/home/wueflo00/projects/def-andelfin/wueflo00/Heart_maturation/Manuscript_analysis/final_analysis_plots/",receiver_cell,".nichenetr.combined_plot2.png"),
+            base_height = 10)
+}
+```
+
+```{r}
+## Save results for all cell types
+saveRDS(ligand_activities_all,
+        file = "../final_analysis_data/ligand_activities_allcells.rds")
+saveRDS(vis_ligand_target_all,
+        file = "../final_analysis_data/vis_ligand_target_all.rds")
+saveRDS(vis_ligand_receptor_network_strict_all,
+        file = "../final_analysis_data/vis_ligand_receptor_network_strict_all.rds")
+```

@@ -1,0 +1,11 @@
+cell_type,general_celltype
+Activated_muller_glia,Muller_glia
+Bipolar_cells_1,Bipolar_cells
+Bipolar_cells_2,Bipolar_cells
+Cholinergic_amacrine_cells,Amacrine_cells
+Early_amacrine_cells,Amacrine_cells
+Early_bipolar_cells,Bipolar_cells
+Early_muller_glia,Muller_glia
+Early_rods,Rods
+Glycinergic_amacrine_cells,Amacrine_cells
+Neuronal_progenitor_cells,Amacrine_cells

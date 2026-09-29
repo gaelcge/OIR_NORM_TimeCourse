@@ -1,0 +1,130 @@
+REFERENCE DATA USED BY THIS ANALYSIS
+====================================
+
+None of these files are committed. They are cached beside the data on the
+cluster and the scripts read them through DATA_DIR. Checksums were taken from
+the copies that the published analysis actually read, on 2026-09-29, so a
+future re-run can confirm it is using the same release rather than whatever the
+source currently serves.
+
+Recorded here rather than in a script comment because MSigDB publishes a
+release string but the file itself carries no version once downloaded, and
+re-downloading a "senescence" gene set under a finished figure would change a
+result with no visible cause. Pin; do not refresh.
+
+
+1. MSigDB v7.1, gene symbols
+---------------------------------------------------------------------------
+Used by   1_timecourse_p5_p17/04_gsva_senescence.R
+          1_timecourse_p5_p17/07_fgsea.R
+          2_compartments_p14_p17 GSVA and fgsea steps
+Source    https://www.gsea-msigdb.org/gsea/msigdb  (release 7.1, March 2020)
+Cached    <cluster>/Gene_list/Gmt.file/MsigDB/V7.1/
+Retrieved on or before 2024-04-30 (file mtime; the download predates this record)
+
+  h.all.v7.1.symbols.gmt      48,247 bytes     50 gene sets
+    sha256 0445cf5f5bb68c14f32d0b11df2afc606506c27161f734a846b102d1d2f12d9a
+  c2.cp.v7.1.symbols.gmt     989,487 bytes  2,232 gene sets
+    sha256 1b33c9a480105a57418382ab63f7415a2d5de88245e07dce1ad67040a6ece994
+  c5.all.v7.1.symbols.gmt  6,610,650 bytes 10,192 gene sets
+    sha256 1f78b8775e7fc16a166c7f8d2de878104ce3fdf5b738f41b08c38699f005f17d
+
+Cite together, per the convention that the paper describes the resource and the
+checksum identifies the copy:
+  Liberzon A et al. The Molecular Signatures Database hallmark gene set
+  collection. Cell Syst 2015;1:417-425. doi:10.1016/j.cels.2015.12.004
+  Subramanian A et al. Gene set enrichment analysis. PNAS 2005;102:15545-15550.
+  doi:10.1073/pnas.0506580102
+  Release used: MSigDB v7.1.
+
+Note on species: the gene sets are human symbols and the data are mouse. The
+merged count matrix carries uppercased mouse symbols (verified: MT-ATP6,
+0610005C13RIK), so the join is by uppercase symbol identity rather than by
+orthology. This is recorded in METHODS_CHOICES.md as a limitation, not a
+correction.
+
+
+2. Regev lab cell-cycle gene list
+---------------------------------------------------------------------------
+Used by   1_timecourse_p5_p17/01_integrate_by_sorting.R
+          (CellCycleScoring; S.Score and G2M.Score are then regressed out in
+          SCTransform)
+Source    Seurat cell-cycle vignette supporting files
+Cached    <cluster>/Seurat_ressource/cell_cycle_vignette_files/
+          regev_lab_cell_cycle_genes.txt
+          98 lines
+          sha256 edca72a02e16d292c7d8986f0b3dc4da6367513a1c3df8a992d2de560ebb9b0e
+
+The script splits this file positionally: lines 1-43 are the S-phase genes and
+lines 44-98 the G2M genes. The cached file is exactly 98 lines, so the split is
+correct for this copy — and only for this copy. A different release of the same
+list would be silently mis-split with no error. Verified 2026-09-29.
+
+  Tirosh I et al. Dissecting the multicellular ecosystem of metastatic
+  melanoma by single-cell RNA-seq. Science 2016;352:189-196.
+  doi:10.1126/science.aad0501
+
+
+3. Custom senescence gene sets - NOT AVAILABLE
+---------------------------------------------------------------------------
+Used by   1_timecourse_p5_p17/04_gsva_senescence.R
+Three gene sets are imported from .gmx files belonging to another member of the
+laboratory and are combined with the MSigDB collections above before GSVA runs:
+
+  MALLETTE_SENESCENCE_UP
+  GLOBAL_SENESCENCE_LITERATURE_CURATED   (from ..._2020.gmx)
+  SAWCHYN_UNBIASED_UP                    (from ..._v4.gmx)
+
+They live under another user's project directory and are **not readable by the
+author of this repository** (permission denied, checked 2026-09-29). They are
+therefore not committed, not checksummed, and their contents are not recorded
+here.
+
+Consequence, stated plainly: the GSVA step cannot be reproduced from this
+repository as it stands, and neither can the functional differential-expression
+step that reads its output. The MSigDB part of the collection is fully
+specified above; the three custom sets are not. See METHODS_CHOICES.md in
+1_timecourse_p5_p17 for how this is reported.
+
+
+4. Curated pathway gene lists (author's own, readable)
+---------------------------------------------------------------------------
+Small single-pathway lists assembled by the author, read by the fgsea and
+functional differential-expression steps of both analyses. They are NOT
+committed - the repository ships no data files - but they are small, they are
+the author's to share, and they are fully specified here, so a reader can
+request them or reconstruct them from the named source pathway.
+
+Cached    <cluster>/Gene_list/
+Checksums taken 2026-09-29.
+
+  lines  sha256                                                            file
+    299  d8d5855d0d007201ee8a721b0b23f37dedcd6e56d3c056ba0e032d060da249eb  CLEAR_NETWORK.csv
+     23  efa8c8b50e86921499b091841256d14306150e0cb3d8cfee088a5f2ea4569d2d  GO_MITOPHAGY.txt
+     42  9a0f991ca509846ab90b60cf64c1421acb7943c576ba38cc8ee29602e34d3245  GO_REGULATION_OF_AUTOPHAGY_OF_MITOCHONDRION.txt
+     15  a44b58847764db981e1a9813135ca08a39f596e8610a8512991331ab8d36e08a  GO_REGULATION_OF_AUTOPHAGY_OF_MITOCHONDRION_IN_RESPONSE_TO_MITOCHONDRIAL_DEPOLARIZATION.txt
+     23  bbb958d9a892b86316f7915422cb28aef0737f52ba7fb773c774bab5a10d48b7  REACTOME_PINK_PARKIN_MEDIATED_MITOPHAGY.txt
+     58  3815bd623f29b0c8af28869b8a5965423ad1ee5a1bf689bf7d6b8d9c11ea2c64  SIRT3_TARGET_GENES.txt
+   1352  4770442cdcff451fbc13c0f95fc0390f7882f8f68dc50fd2f303687e3ec07387  TFEB_TARGET_LIST.txt
+     10  52c9374a7ac9acaa344f4f6774b639dbb89c027182d58071fc40c22c33bd1658  WP_NAD_METABOLISM_SIRTUINS_AND_AGING.txt
+
+The GO_, REACTOME_ and WP_ lists take their names from Gene Ontology, Reactome
+and WikiPathways terms respectively and are consistent in size with those
+terms; no release was recorded at the time they were extracted, so the checksum
+and the line count are what identifies the copy that was used.
+
+
+5. An empty reference file - GO_HEXOSE_CATABOLIC_PROCESS.gmt
+---------------------------------------------------------------------------
+Used by   1_timecourse_p5_p17/04_de_genes.R
+Cached    <cluster>/Gene_list/Gmt.file/Pathways/GO_HEXOSE_CATABOLIC_PROCESS.gmt
+          0 lines, 0 gene sets
+          sha256 e22125b26baddb83b5eb9aee9e4053c579006278994987db703867ccf8219c5d
+
+The file is empty. Step 04 reads it with getGmt() and later indexes
+gsc_final[["GO_HEXOSE_CATABOLIC_PROCESS"]] when assembling a glycolysis /
+pentose-phosphate gene list, so that term contributed no genes to the list.
+Whether the affected section ran at all cannot be determined from the files
+alone, and it was not re-run to find out. Recorded here and in
+1_timecourse_p5_p17/METHODS_CHOICES.md rather than removed from the script.
+

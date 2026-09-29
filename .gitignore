@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# Data objects are never committed. The count matrices are deposited at GEO
+# (GSE150703); the merged Drop-seq matrix and every Seurat object live on the
+# cluster. See the root README for how to obtain them.
+# ---------------------------------------------------------------------------
+
+# Seurat / SingleCellExperiment objects and other R state
+*.rds
+*.Rds
+*.RDS
+*.RData
+*.rda
+.Rhistory
+.RData
+.Rproj.user/
+
+# count matrices, loom, HDF5, mtx
+*.loom
+*.h5
+*.h5ad
+*.h5seurat
+*.mtx
+*.mtx.gz
+*.txt.gz
+*.tsv.gz
+*.csv.gz
+
+# large plain-text matrices: the DGE matrices are .txt, so .txt is excluded
+# wholesale and documentation is written in .md instead
+*.txt
+!requirements.txt
+
+# batch-job logs
+*.Rout
+slurm-*.out
+*.job.report
+
+# reference databases: cached beside the data, never in the repo
+reference/*
+!reference/PROVENANCE.txt
+
+# per-folder figure output directories are untracked; only the assembled
+# figures under the root figures/ are committed
+*/figures/
+*/*/figures/
+*/*/*/figures/
+
+# editor / OS
+.ipynb_checkpoints/
+.DS_Store
+*~
+*.swp

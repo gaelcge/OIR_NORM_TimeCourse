@@ -1,0 +1,163 @@
+<!--
+---------------------------------------------------------------------------
+02_neuroglial - 04_dyno_trajectory.Rmd
+
+Part of 2_compartments_p14_p17. Subclustering and downstream analysis of
+neurons and glia, run on cells taken from the annotated
+object of that folder's step 03.
+
+WHICH OBJECT
+    Cells are subset from
+    RETINA_RYTVELA_OIRTimeCourse_AlignedByCond_Sorting.3.17.30.Seurat_object.annotated.rds
+    - P14/P17 only, Seurat v2 lineage. NOT the P5-P17 object of the sibling
+    folder.
+
+WHY SUBCLUSTER PER COMPARTMENT
+    A single clustering resolution cannot resolve microglial activation states
+    and rod subtypes at once: the resolution that splits the former shatters
+    the latter. Each compartment is therefore re-embedded and re-clustered on
+    its own cells, and ../11_subcluster_convergence.R is where the independent
+    label sets are reconciled onto one object.
+
+RUN ORDER
+    After ../03_annotate_celltypes.R, before ../11_subcluster_convergence.R.
+    Within this folder, in numbered order.
+
+RELIC CODE
+    Blocks commented out with `~` were carried in from other projects and are
+    disabled, not deleted - they operate on objects this script never loads,
+    or write into directories that no longer exist. See ../../EDIT_POLICY.md.
+---------------------------------------------------------------------------
+-->
+
+---
+title: "Dyno_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+rm(list = ls())
+options(warn=-1)
+library(plotly)
+library(tidyverse)
+library(ggrepel)
+library(gtools)
+library(data.table)
+library(gplots)
+library(useful)
+library(locfit)
+library(Matrix)
+library(monocle)
+library(DDRTree)
+library(pheatmap)
+library(reshape)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(magrittr)
+library(harmony)
+library(RColorBrewer)
+library(Seurat)
+library(dyno)
+
+```
+
+
+#Set directory of dataset to analyse
+
+```{r}
+setwd(file.path(B_DIR, "Subclustering/NeuroGlialCell/CellIdentification"))
+
+NeuroGlia <- readRDS("NeuroGlia_subclustered_renamed.rds")
+
+summary(NeuroGlia@ident)
+summary(NeuroGlia@meta.data)
+
+seurat_object <- NeuroGlia 
+#Start trajectory analysis
+
+```
+
+```{r}
+setwd(file.path(B_DIR, "Subclustering/NeuroGlialCell/Dyno"))
+## Load the expression matrix 
+
+
+metadata <- seurat_object@meta.data
+metadata$cell_ids <- rownames(metadata)
+
+dataset <- wrap_expression(
+ expression = t(as.matrix(seurat_object@data)),
+ counts = t(as.matrix(seurat_object@raw.data[,colnames(seurat_object@data)]))
+ , cell_info = metadata
+)
+
+## Make a dataframe for group id
+dyno_groupid <- as.data.frame(metadata %>% select(Cell_type_final, cell_ids))
+colnames(dyno_groupid) <- c("group_id", "cell_id")
+
+
+
+dataset <- add_prior_information(
+ dataset,
+ groups_id = dyno_groupid
+)
+
+```
+
+```{r}
+### Choosing the right TI algo
+
+guidelines <- guidelines_shiny(dataset)
+```
+
+```{r}
+answers <- dynguidelines::answer_questions(
+  multiple_disconnected = FALSE, 
+  expect_topology = FALSE, 
+  expected_topology = NULL, 
+  expect_cycles = TRUE, 
+  n_cells = 5448, 
+  n_features = 21408, 
+  memory = "80GB", 
+  prior_information = c("groups_id", "timecourse_discrete"), 
+  docker = FALSE
+)
+guidelines <- dynguidelines::guidelines(answers = answers)
+```
+
+```{r}
+#Run TI
+
+
+model_guided <- infer_trajectory(dataset = dataset, method = guidelines$methods_selected, verbose = T)
+
+png("NeuroGlia.model_guided.png")
+plot_graph(model_guided)
+dev.off()
+
+```
+
+```{r}
+model <- model_guided %>% add_dimred(dyndimred::dimred_mds, expression_source = dataset$expression)
+plot_dimred(
+  model, 
+  expression_source = dataset$expression, 
+  grouping = dataset$prior_information$groups_id
+)
+
+```
+
+#END
+q("no")
